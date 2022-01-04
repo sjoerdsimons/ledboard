@@ -1,20 +1,22 @@
 use defmt::*;
 use embassy_traits::gpio::WaitForAnyEdge;
 use embedded_hal::digital::v2::InputPin;
-use futures::future::{select, Either};
+use futures::future::select;
 use rotary_encoder_hal::{Direction, Rotary};
 
 #[derive(Format, Clone, Copy)]
 pub enum RotaryEvent {
     CW(u8),
     CCW(u8),
-    Button,
+    Down,
+    Up,
 }
 
 pub struct RotaryButton<A, B, C, const N: u8> {
     pos: u8,
     encoder: Rotary<A, B>,
     button: C,
+    button_down: bool,
 }
 
 impl<A, B, C, const N: u8> RotaryButton<A, B, C, N>
@@ -30,6 +32,7 @@ where
             pos: 0,
             encoder,
             button,
+            button_down: false,
         }
     }
 
@@ -40,14 +43,17 @@ where
         for<'c> <C as WaitForAnyEdge>::Future<'c>: Unpin,
     {
         loop {
-            let (a, b): (&mut A, &mut B) = self.encoder.pins();
-            //select(a.wait_for_any_edge(), b.wait_for_any_edge()).await;
-            let e = select(a.wait_for_any_edge(), b.wait_for_any_edge());
-            match select(self.button.wait_for_any_edge(), e).await {
-                Either::Left(_) => return RotaryEvent::Button,
-                Either::Right(_) => (),
+            match (self.button.is_low(), self.button_down) {
+                (Ok(true), false) => {
+                    self.button_down = true;
+                    return RotaryEvent::Down;
+                }
+                (Ok(false), true) => {
+                    self.button_down = false;
+                    return RotaryEvent::Up;
+                }
+                _ => (),
             }
-
             if let Ok(direction) = self.encoder.update() {
                 match direction {
                     Direction::Clockwise => {
@@ -69,6 +75,11 @@ where
                     _ => (),
                 }
             }
+
+            let (a, b): (&mut A, &mut B) = self.encoder.pins();
+            let encoder_event = select(a.wait_for_any_edge(), b.wait_for_any_edge());
+            let button_event = self.button.wait_for_any_edge();
+            select(button_event, encoder_event).await;
         }
     }
 }

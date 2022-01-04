@@ -20,8 +20,8 @@ struct LedByte([u8; 4]);
 impl LedByte {
     fn from_byte(b: u8) -> LedByte {
         let mut l = [0; 4];
-        for i in 0..4 {
-            l[i] = match b >> (6 - (2 * i)) & 0x3 {
+        for (i, item) in l.iter_mut().enumerate() {
+            *item = match b >> (6 - (2 * i)) & 0x3 {
                 0x0 => 0x88,
                 0x1 => 0x8c,
                 0x2 => 0xc8,

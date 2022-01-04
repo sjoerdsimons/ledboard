@@ -8,7 +8,7 @@ use panic_probe as _;
 
 pub use defmt::*;
 use embassy::executor::Spawner;
-use embassy::time::{with_timeout, Duration, Timer};
+use embassy::time::{Duration, Timer};
 use embassy_stm32::time::Hertz;
 use embassy_stm32::Config;
 use embassy_stm32::Peripherals;
@@ -55,18 +55,21 @@ impl Iterator for StatusIter<'_> {
     type Item = Led;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.status.level == 0 {
+            return None;
+        }
         let l = if self.offset < 24 {
-            if self.status.yellow >= self.offset {
+            if self.status.yellow > self.offset {
                 Some(Led {
                     red: self.status.level,
-                    green: self.status.level / 3,
+                    green: (self.status.level / 3).max(1),
                     ..Default::default()
                 })
             } else {
                 Some(Led::default())
             }
         } else if self.offset < 72 {
-            if self.offset >= 48 && self.status.red >= (self.offset - 48) {
+            if self.offset >= 48 && self.status.red > (self.offset - 48) {
                 Some(Led {
                     red: self.status.level,
                     ..Default::default()
@@ -93,7 +96,7 @@ fn config() -> Config {
 
 #[embassy::main(config = "config()")]
 async fn main(_spawner: Spawner, p: Peripherals) {
-    let mut ledboard = LedBoard::new(p);
+    let mut ledboard = LedBoard::new(p).await;
     let mut status = Status::new();
     loop {
         let mut after = Timer::after(Duration::from_millis(33));
@@ -106,11 +109,11 @@ async fn main(_spawner: Spawner, p: Peripherals) {
                     match update {
                         RotorUpdate::Red(event) => match event {
                             RotaryEvent::CW(v) | RotaryEvent::CCW(v) => status.red = v,
-                            _ => (),
+                            _ => status.red = 0,
                         },
                         RotorUpdate::Yellow(event) => match event {
                             RotaryEvent::CW(v) | RotaryEvent::CCW(v) => status.yellow = v,
-                            _ => (),
+                            _ => status.yellow = 0,
                         },
                     }
                     info!("{:?}", update);

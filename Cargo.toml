@@ -23,7 +23,7 @@ opt-level = 3
 debug = 2
 
 [profile.release]
-opt-level = 3
+opt-level = "s"
 codegen-units = 1
 debug = 2
 debug-assertions = false

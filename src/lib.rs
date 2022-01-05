@@ -8,7 +8,7 @@ use embassy::executor::InterruptExecutor;
 use embassy::interrupt::InterruptExt;
 use embassy::time::Delay;
 use embassy::util::Forever;
-use embassy_stm32::adc::Adc;
+use embassy_stm32::adc::{Adc, SampleTime};
 use embassy_stm32::dma::NoDma;
 use embassy_stm32::exti::ExtiInput;
 use embassy_stm32::gpio::{Input, NoPin, Pull};
@@ -67,20 +67,6 @@ async fn monitor_input(
 }
 
 pub struct LedBoard {
-    /*
-    yellow_rotor: RotaryButton<
-        ExtiInput<'static, PB10>,
-        ExtiInput<'static, PB11>,
-        ExtiInput<'static, PB14>,
-        20,
-    >,
-    red_rotor: RotaryButton<
-        ExtiInput<'static, PA3>,
-        ExtiInput<'static, PA4>,
-        ExtiInput<'static, PB15>,
-        20,
-    >,
-    */
     value_pin: PB1,
     adc: Adc<'static, ADC1>,
     pub leds: Leds<SPI1, DMA1_CH3, 144>,
@@ -136,7 +122,6 @@ impl LedBoard {
 
         let mut adc = Adc::new(p.ADC1, &mut Delay);
         let mut vref = adc.enable_vref(&mut Delay);
-        info!("{}", adc.calibrate(&mut vref));
         Self {
             value_pin: p.PB1,
             adc,
@@ -150,6 +135,22 @@ impl LedBoard {
     }
 
     pub fn get_pot(&mut self) -> u16 {
+        self.adc.set_sample_time(SampleTime::Cycles239_5);
         self.adc.read(&mut self.value_pin)
+    }
+
+    pub fn get_random(&mut self) -> u32 {
+        // Short measure temp, vref and pot
+        let mut vtemp = self.adc.enable_temperature();
+        let mut vref = self.adc.enable_vref(&mut Delay);
+
+        self.adc.set_sample_time(SampleTime::Cycles1_5);
+
+        let t = self.adc.read(&mut vtemp) as u32;
+        let v = self.adc.read(&mut vref) as u32;
+        let p = self.adc.read(&mut self.value_pin) as u32;
+        let stamp = embassy::time::Instant::now().as_ticks() as u32;
+
+        t.wrapping_mul(v).wrapping_mul(p).wrapping_mul(stamp)
     }
 }

@@ -39,6 +39,39 @@ pub struct Leds<T: SpiInstance, Tx, const N_LEDS: usize> {
 
 const RESET_BYTES: usize = 64;
 const BYTES_PER_LED: usize = 16;
+struct ZigZag<'a, const N_LEDS: usize> {
+    data: &'a mut [u8],
+    offset: usize,
+}
+
+impl<'a, const N_LEDS: usize> ZigZag<'a, N_LEDS> {
+    fn new(data: &'a mut [u8]) -> Self {
+        ZigZag { data, offset: 0 }
+    }
+}
+
+impl<'a, const N_LEDS: usize> Iterator for ZigZag<'a, N_LEDS> {
+    type Item = &'a mut [u8; BYTES_PER_LED];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.offset < N_LEDS {
+            let mut o = match (self.offset % 12, self.offset / 12) {
+                (x, y) if x % 2 == 0 => x * 12 + y,
+                (x, y) => (x + 1) * 12 - y - 1,
+            };
+            o *= BYTES_PER_LED;
+            o += RESET_BYTES;
+            let slice = &mut self.data[o..o + BYTES_PER_LED];
+
+            let ptr = slice.as_mut_ptr() as *mut [u8; BYTES_PER_LED];
+            self.offset += 1;
+            unsafe { Some(&mut *ptr) }
+        } else {
+            None
+        }
+    }
+}
+
 impl<T, Tx, const N_LEDS: usize> Leds<T, Tx, N_LEDS>
 where
     T: SpiInstance,
@@ -54,10 +87,8 @@ where
         [(); 2 * RESET_BYTES + (BYTES_PER_LED * N_LEDS)]: ,
     {
         let mut data = [0x0u8; 2 * RESET_BYTES + (BYTES_PER_LED * N_LEDS)];
-        for (chunk, led) in data[RESET_BYTES..RESET_BYTES + (BYTES_PER_LED * N_LEDS)]
-            .chunks_exact_mut(16)
-            .zip(iter.chain(core::iter::repeat(Led::default())))
-        {
+        let zigzag = ZigZag::<N_LEDS>::new(&mut data);
+        for (chunk, led) in zigzag.zip(iter.chain(core::iter::repeat(Led::default()))) {
             let green: &mut [u8; 4] = (&mut chunk[0..4]).try_into().unwrap();
             *green = LedByte::from_byte(led.green).0;
 

@@ -122,6 +122,7 @@ impl LedBoard {
 
         let mut adc = Adc::new(p.ADC1, &mut Delay);
         let mut vref = adc.enable_vref(&mut Delay);
+        adc.calibrate(&mut vref);
         Self {
             value_pin: p.PB1,
             adc,

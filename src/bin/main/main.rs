@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(type_alias_impl_trait)]
 
+use defmt::info;
 use defmt_rtt as _;
 // global logger
 use panic_probe as _;
@@ -97,7 +98,10 @@ fn config() -> Config {
     config
 }
 
-async fn step<const W: usize, const H: usize>(ledboard: &mut LedBoard, conway: &mut Conway<W, H>) {
+async fn step<const W: usize, const H: usize>(
+    ledboard: &mut LedBoard,
+    conway: &mut Conway<W, H>,
+) -> bool {
     let v = ledboard.get_pot();
     let level = (255.min((v + 15) / 16)) as u8;
 
@@ -109,7 +113,7 @@ async fn step<const W: usize, const H: usize>(ledboard: &mut LedBoard, conway: &
                 ..Default::default()
             }))
             .await;
-        conway.reset(ledboard.get_random());
+        return true;
     } else {
         ledboard
             .leds
@@ -133,17 +137,25 @@ async fn step<const W: usize, const H: usize>(ledboard: &mut LedBoard, conway: &
                 ..Default::default()
             }))
             .await;
-        conway.reset(ledboard.get_random());
+        return true;
     }
+    false
 }
 
 #[embassy::main(config = "config()")]
 async fn main(_spawner: Spawner, p: Peripherals) {
+    info!("Hello world!");
     let mut ledboard = LedBoard::new(p).await;
     let mut conway: Conway<12, 12> = Conway::new(ledboard.get_random());
     let mut d = Duration::from_millis(500);
+    let mut loops = 0;
     loop {
-        step(&mut ledboard, &mut conway).await;
+        if loops > 600 || step(&mut ledboard, &mut conway).await {
+            conway.reset(ledboard.get_random());
+            loops = 0;
+        } else {
+            loops += 1;
+        }
         let mut after = Timer::after(d);
         loop {
             let (a, reset) = {
@@ -179,6 +191,7 @@ async fn main(_spawner: Spawner, p: Peripherals) {
             };
             if reset {
                 conway.reset(ledboard.get_random());
+                loops = 0;
                 break;
             } else {
                 after = a;
